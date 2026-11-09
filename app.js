@@ -11,7 +11,7 @@
   const BASE = ['#e4dccb', '#d9d1bd', '#cfc7b2', '#e0d7c2', '#d5ccb6', '#dad3c3'];
   const baseColor = k => { let h = 7; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; return BASE[h % BASE.length]; };
 
-  let idx = 0, tab = 'politics', view = { x: 0, y: 0, w: M.W, h: M.H }, anim = null, activeMark = -1;
+  let idx = 0, view = { x: 0, y: 0, w: M.W, h: M.H }, anim = null, activeMark = -1;
 
   // ---------- каркас SVG ----------
   const defs = el('defs', {}, svg);
@@ -175,25 +175,46 @@
   }
 
   // ---------- панель ----------
+  const SECTIONS = [['politics', 'p', 'Политика'], ['society', 's', 'Общество и экономика'], ['analysis', 'a', 'Анализ']];
   function renderPanel(st) {
     $('stepDate').textContent = st.date;
     $('stepTitle').textContent = st.title;
     const note = $('stepNote'); note.hidden = !st.note; note.textContent = st.note || '';
-    renderTab();
+    const ex = (window.EXTRA || {})[st.id] || {};
+    $('sections').innerHTML = SECTIONS.map(([k, e, h]) => {
+      const paras = [st[k], ex[e]].filter(Boolean).map(t => `<p>${esc(t)}</p>`).join('');
+      return `<section class="sec sec-${k}"><h3>${h}</h3>${paras}</section>`;
+    }).join('');
+    const charts = st.charts || (st.chart ? [st.chart] : []);
+    $('chartBox').hidden = !charts.length;
+    $('chartBox').innerHTML = charts.map(chartHTML).join('');
     const all = st.markers.map((m, i) => ({ n: i + 1, t: m.t, d: m.d, edge: false })).concat((st.edges || []).map(e => ({ n: '→', t: e.t, d: e.d, edge: true })));
     $('marks').innerHTML = all.map((m, i) => `<li><button type="button" data-i="${i}"><span class="n${m.edge ? ' edge' : ''}">${m.n}</span><span><b>${esc(m.t)}.</b> ${esc(m.d)}</span></button></li>`).join('');
     $('marks').querySelectorAll('button').forEach(b => b.addEventListener('click', () => selectMark(+b.dataset.i, true)));
     $('leadersTitle').hidden = !st.leaders.length;
-    $('leaders').innerHTML = st.leaders.map(leaderCard).join('');
+    $('leaders').innerHTML = st.leaders.map(leaderBio).join('');
     bindLeaders($('leaders'));
-    $('question').textContent = st.question;
   }
-  function renderTab() {
-    const st = STEPS[idx], b = $('tabBody');
-    b.className = 'tab-body' + (tab === 'analysis' ? ' analysis' : '');
-    const src = '';
-    b.innerHTML = `<p style="margin:0">${esc(st[tab])}</p>${src}`;
-    document.querySelectorAll('.tabs button').forEach(x => { const on = x.dataset.tab === tab; x.classList.toggle('on', on); x.setAttribute('aria-selected', on); });
+  const num = v => String(v).replace('.', ',');
+  function chartHTML(c) {
+    const W = 360, H = 236, Lp = 34, B = 54, T = 20, max = c.max || 60, step = c.step || 10;
+    const bw = (W - Lp - 10) / c.bars.length;
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let g = '';
+    for (let v = 0; v <= max + 1e-9; v += step) g += `<line x1="${Lp}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" class="ch-grid"/><text x="${Lp - 6}" y="${y(v) + 4}" class="ch-ax" text-anchor="end">${num(+v.toFixed(1))}</text>`;
+    c.bars.forEach((b, i) => {
+      const x = Lp + i * bw + bw * 0.16, w = bw * 0.68;
+      g += `<rect x="${x}" y="${y(b.v)}" width="${w}" height="${y(0) - y(b.v)}" class="ch-bar${b.mark ? ' ch-mark' : ''}"/>`;
+      g += `<text x="${x + w / 2}" y="${y(b.v) - 5}" class="ch-val" text-anchor="middle">${num(b.v)}</text>`;
+      g += `<text x="${x + w / 2}" y="${H - B + 16}" class="ch-lab" text-anchor="middle">${esc(b.l)}</text>`;
+      if (b.n) g += `<text x="${x + w / 2}" y="${H - B + 31}" class="ch-sub" text-anchor="middle">${esc(b.n)}</text>`;
+    });
+    if (c.line != null) g += `<line x1="${Lp}" x2="${W - 6}" y1="${y(c.line)}" y2="${y(c.line)}" class="ch-line"/><text x="${W - 8}" y="${y(c.line) - 5}" class="ch-ll" text-anchor="end">${esc(c.lineLabel)}</text>`;
+    return `<div class="chart"><h3>${esc(c.title)}</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.title)}">${g}</svg>${c.note ? `<p class="ch-note">${esc(c.note)}</p>` : ''}${(c.text || []).map(t => `<p>${esc(t)}</p>`).join('')}${c.src ? `<p class="ch-src">${esc(c.src)}</p>` : ''}</div>`;
+  }
+  function leaderBio(id) {
+    const p = L[id];
+    return `<article class="lbio"><button type="button" class="leader" data-id="${id}" aria-label="${esc(p.name)}">${portrait(id)}</button><div class="lbio-t"><b>${esc(p.name)}</b><span class="lbio-y">${esc(p.years)}. ${esc(p.role)}</span><p>${esc(p.bio)}</p><p class="lbio-n">${esc(p.note)}</p></div></article>`;
   }
   function initials(name) { return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join(''); }
   function portrait(id) {
@@ -207,7 +228,7 @@
   function bindLeaders(root) { root.querySelectorAll('.leader').forEach(b => b.addEventListener('click', () => openLeader(b.dataset.id))); }
   function openLeader(id) {
     const p = L[id];
-    openModal(`<div class="lead-card">${portrait(id)}<div><h2>${esc(p.name)}</h2><div style="color:var(--muted);font-size:14px">${esc(p.years)}<br>${esc(p.role)}</div></div></div><p>${esc(p.note)}</p>`);
+    openModal(`<div class="lead-card">${portrait(id)}<div><h2>${esc(p.name)}</h2><div style="color:var(--muted);font-size:14px">${esc(p.years)}<br>${esc(p.role)}</div></div></div><p>${esc(p.bio)}</p><p>${esc(p.note)}</p>`);
   }
 
   // ---------- метки и всплывающие окна ----------
@@ -241,7 +262,6 @@
   chips.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => go(+c.dataset.i)));
   $('prev').addEventListener('click', () => go(idx - 1));
   $('next').addEventListener('click', () => go(idx + 1));
-  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; renderTab(); }));
   document.addEventListener('keydown', e => {
     if (!$('modal').hidden) { if (e.key === 'Escape') closeModal(); return; }
     if (e.key === 'ArrowRight') go(idx + 1); else if (e.key === 'ArrowLeft') go(idx - 1); else if (e.key === 'Escape') hidePop();
@@ -317,7 +337,8 @@
     <p>Проекция: равновеликая азимутальная Ламберта с центром в Центральной Европе.</p>`));
 
   // стена из повторяющихся слов, как на фасадах 1930-х
-  $('wall').textContent = Array(40).fill('ВОЙНА · МИР · ДОЛГ · КРИЗИС · ВОЙНА').join(' · ');
+  const wtxt = Array(12).fill('ВОЙНА · МИР · ДОЛГ · КРИЗИС').join(' · ') + ' · ';
+  $('wall').innerHTML = `<div class="wall-track"><span>${wtxt}</span><span>${wtxt}</span></div>`;
 
   // ---------- старт ----------
   window.addEventListener('resize', () => { view = fitView(view); applyView(); });
