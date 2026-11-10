@@ -64,16 +64,68 @@
   const yearOf = st => parseInt(st.id, 10);
   let labelData = [], markEls = [], edgeData = [], flowData = [], usaBadge = null;
 
+  // слой суши: при смене среза границ старый слой растворяется, изменившиеся страны обводятся
+  const gLandWrap = el('g', {}, svg); svg.insertBefore(gLandWrap, gLand); gLand.remove();
+  const gChg = el('g', { class: 'chg-layer' }); svg.insertBefore(gChg, gLbl);
+  let curSnap = null, landPaths = {}, chgTimer = 0;
+  const NOISE = new Set(['DZ', 'AD', 'IE', 'MA', 'IR']); // различия срезов, а не реальные изменения границ
+  const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function changedKeys(a, b) {
+    const A = M.labels[a], B = M.labels[b], out = [];
+    for (const k in B) {
+      if (NOISE.has(k)) continue;
+      if (!A[k]) out.push(k);
+      else if (Math.abs(B[k][2] - A[k][2]) / A[k][2] > 0.03) out.push(k);
+    }
+    return out;
+  }
+  function styleLand(st) {
+    const focus = new Set(st.focus || []), groups = st.groups || {};
+    for (const k in landPaths) {
+      const g = groups[k];
+      const p = landPaths[k];
+      p.style.fill = g ? G[g].c : baseColor(k);
+      p.setAttribute('class', 'c' + (focus.has(k) ? ' focus' : '') + (!g && !focus.has(k) && focus.size ? ' dim' : ''));
+    }
+  }
+  function renderLand(st) {
+    if (st.snap === curSnap) { styleLand(st); return; }
+    const prev = curSnap, oldG = gLandWrap.lastElementChild;
+    const ng = el('g', { class: 'land' });
+    gLandWrap.insertBefore(ng, gLandWrap.firstChild);
+    landPaths = {};
+    for (const p of M.snaps[st.snap]) {
+      const path = el('path', { d: p.d, 'data-k': p.k }, ng);
+      path.addEventListener('click', () => {
+        if (dragged) return;
+        const cur = STEPS[idx], g = (cur.groups || {})[p.k];
+        showPop(window.countryName(p.k, yearOf(cur)), g && G[g].t ? G[g].t : '');
+      });
+      landPaths[p.k] = path;
+    }
+    styleLand(st);
+    curSnap = st.snap;
+    if (!oldG) return;
+    if (!prev || reduceMotion()) { oldG.remove(); return; }
+    oldG.classList.add('old');
+    requestAnimationFrame(() => requestAnimationFrame(() => oldG.classList.add('out')));
+    setTimeout(() => oldG.remove(), 1100);
+    // обводка государств, чьи границы изменились
+    clearTimeout(chgTimer); gChg.textContent = '';
+    const keys = changedKeys(prev, st.snap), sw = 2.6 * unit();
+    for (const k of keys) {
+      const src = M.snaps[st.snap].find(p => p.k === k);
+      if (src) el('path', { d: src.d, pathLength: 1, class: 'chg', 'stroke-width': sw }, gChg);
+    }
+    const badge = $('mapChg');
+    if (keys.length) { badge.hidden = false; badge.classList.remove('show'); void badge.offsetWidth; badge.classList.add('show'); }
+    chgTimer = setTimeout(() => { gChg.textContent = ''; badge.hidden = true; }, 4300);
+  }
+
   function renderMap(st) {
     const y = yearOf(st), focus = new Set(st.focus || []), groups = st.groups || {};
-    gLand.textContent = ''; gLbl.textContent = ''; gFlow.textContent = ''; gMk.textContent = ''; gEdge.textContent = '';
-    for (const p of M.snaps[st.snap]) {
-      const g = groups[p.k];
-      const fill = g ? G[g].c : baseColor(p.k);
-      const cls = 'c' + (focus.has(p.k) ? ' focus' : '') + (!g && !focus.has(p.k) && focus.size ? ' dim' : '');
-      const path = el('path', { d: p.d, fill, class: cls, 'data-k': p.k }, gLand);
-      path.addEventListener('click', ev => { if (dragged) return; showPop(window.countryName(p.k, y), g && G[g].t ? G[g].t : ''); });
-    }
+    gLbl.textContent = ''; gFlow.textContent = ''; gMk.textContent = ''; gEdge.textContent = '';
+    renderLand(st);
     // подписи
     labelData = [];
     const lab = M.labels[st.snap];
@@ -188,6 +240,7 @@
     const charts = st.charts || (st.chart ? [st.chart] : []);
     $('chartBox').hidden = !charts.length;
     $('chartBox').innerHTML = charts.map(chartHTML).join('');
+    renderLinks(st);
     const all = st.markers.map((m, i) => ({ n: i + 1, t: m.t, d: m.d, edge: false })).concat((st.edges || []).map(e => ({ n: '→', t: e.t, d: e.d, edge: true })));
     $('marks').innerHTML = all.map((m, i) => `<li><button type="button" data-i="${i}"><span class="n${m.edge ? ' edge' : ''}">${m.n}</span><span><b>${esc(m.t)}.</b> ${esc(m.d)}</span></button></li>`).join('');
     $('marks').querySelectorAll('button').forEach(b => b.addEventListener('click', () => selectMark(+b.dataset.i, true)));
@@ -196,6 +249,47 @@
     bindLeaders($('leaders'));
   }
   const num = v => String(v).replace('.', ',');
+  // ---------- связи между шагами ----------
+  function renderLinks(st) {
+    const LK = window.LINKS || [], byId = id => STEPS.findIndex(x => x.id === id);
+    const item = (id, text, dir) => { const t = STEPS[byId(id)]; return `<li><button type="button" data-go="${byId(id)}"><span class="lk-y">${dir === 'in' ? '← ' : ''}${esc(t.label.replace('·', ' '))}${dir === 'out' ? ' →' : ''}</span><span><b>${esc(t.title)}.</b> ${esc(text)}</span></button></li>`; };
+    const ins = LK.filter(l => l[1] === st.id).map(l => item(l[0], l[2], 'in')).join('');
+    const outs = LK.filter(l => l[0] === st.id).map(l => item(l[1], l[2], 'out')).join('');
+    const box = $('links');
+    box.innerHTML = (ins ? `<h3 class="sub">Откуда это</h3><ul class="lk lk-in">${ins}</ul>` : '') + (outs ? `<h3 class="sub">К чему привело</h3><ul class="lk lk-out">${outs}</ul>` : '');
+    box.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { go(+b.dataset.go); if (matchMedia('(max-width: 899px)').matches) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  }
+  // ---------- сводные графики под картой ----------
+  const DW = 360, DH = 170, DL = 30, DR = 10, DT = 10, DB = 22;
+  function dashInit() {
+    const S = window.STATS || [];
+    $('dash').innerHTML = `<button type="button" class="dash-h" id="dashT" aria-expanded="true"><span>Цифры эпохи</span><i></i></button><div class="dash-b">${S.map(c => {
+      const n = Math.max(...c.series.map(q => q.v.length)), x = i => DL + (DW - DL - DR) * i / (n - 1), y = v => DT + (DH - DT - DB) * (1 - (v - c.min) / (c.max - c.min));
+      let g = '';
+      for (let v = Math.ceil(c.min / c.step) * c.step; v <= c.max; v += c.step) g += `<line x1="${DL}" x2="${DW - DR}" y1="${y(v)}" y2="${y(v)}" class="${c.id === 'prod' && v === 100 ? 'ch-base' : 'ch-grid'}"/><text x="${DL - 5}" y="${y(v) + 4}" class="ch-ax" text-anchor="end">${v}</text>`;
+      for (let i = 0; i < n; i++) if ((c.from + i) % 2 === 1 || n < 10) g += `<text x="${x(i)}" y="${DH - 6}" class="ch-ax" text-anchor="middle">${c.from + i}</text>`;
+      g += `<g class="d-cur" data-c="${c.id}"></g>`;
+      for (const q of c.series) g += `<polyline points="${q.v.map((v, i) => x(i) + ',' + y(v)).join(' ')}" class="d-line" stroke="${q.c}"${q.d ? ` stroke-dasharray="${q.d}"` : ''}/>`;
+      g += `<g class="d-dots" data-c="${c.id}"></g>`;
+      const leg = c.series.map(q => `<span><svg viewBox="0 0 26 8" width="26" height="8"><line x1="1" x2="25" y1="4" y2="4" stroke="${q.c}" stroke-width="3"${q.d ? ` stroke-dasharray="${q.d}"` : ''}/></svg>${esc(q.n)}<b data-v="${c.id}-${q.k}"></b></span>`).join('');
+      return `<figure class="dcard"><figcaption><b>${esc(c.title)}</b><span>${esc(c.unit)}</span><em data-y="${c.id}"></em></figcaption><svg viewBox="0 0 ${DW} ${DH}" role="img" aria-label="${esc(c.title)}">${g}</svg><div class="d-leg">${leg}</div><details><summary>Что это за цифры</summary><p>${esc(c.note)}</p><p>${esc(c.src)}</p></details></figure>`;
+    }).join('')}</div>`;
+    const dash = $('dash'), t = $('dashT');
+    if (matchMedia('(max-width: 899px)').matches) { dash.classList.add('shut'); t.setAttribute('aria-expanded', 'false'); }
+    t.addEventListener('click', () => { const sh = dash.classList.toggle('shut'); t.setAttribute('aria-expanded', String(!sh)); requestAnimationFrame(() => { view = fitView(view); applyView(); }); });
+  }
+  function dashUpdate(st) {
+    const yr = yearOf(st);
+    for (const c of (window.STATS || [])) {
+      const n = Math.max(...c.series.map(q => q.v.length)), i = yr - c.from, inR = i >= 0 && i < n;
+      const x = DL + (DW - DL - DR) * i / (n - 1), y = v => DT + (DH - DT - DB) * (1 - (v - c.min) / (c.max - c.min));
+      const cur = document.querySelector(`.d-cur[data-c="${c.id}"]`), dots = document.querySelector(`.d-dots[data-c="${c.id}"]`);
+      cur.innerHTML = inR ? `<line x1="${x}" x2="${x}" y1="${DT}" y2="${DH - DB}" class="d-now"/>` : '';
+      dots.innerHTML = inR ? c.series.filter(q => q.v[i] != null).map(q => `<circle cx="${x}" cy="${y(q.v[i])}" r="4.2" fill="${q.c}" class="d-dot"/>`).join('') : '';
+      document.querySelector(`[data-y="${c.id}"]`).textContent = inR ? yr + ' г.' : (yr < c.from ? 'ряд начинается с ' + c.from + ' г.' : 'ряд кончается ' + (c.from + n - 1) + ' г.');
+      for (const q of c.series) document.querySelector(`[data-v="${c.id}-${q.k}"]`).textContent = inR && q.v[i] != null ? num(q.v[i]) : '';
+    }
+  }
   function chartHTML(c) {
     const W = 360, H = 236, Lp = 34, B = 54, T = 20, max = c.max || 60, step = c.step || 10;
     const bw = (W - Lp - 10) / c.bars.length;
@@ -272,7 +366,7 @@
     idx = i;
     const st = STEPS[i];
     $('pop').hidden = true; activeMark = -1;
-    renderMap(st); renderPanel(st);
+    renderMap(st); renderPanel(st); dashUpdate(st);
     chips.querySelectorAll('.chip').forEach((c, j) => { c.classList.toggle('on', j === i); c.setAttribute('aria-selected', j === i); });
     const on = chips.children[i];
     chips.scrollTo({ left: on.offsetLeft - chips.clientWidth / 2 + on.clientWidth / 2, behavior: instant ? 'auto' : 'smooth' });
@@ -343,6 +437,7 @@
   // ---------- старт ----------
   window.addEventListener('resize', () => { view = fitView(view); applyView(); });
   const fromHash = STEPS.findIndex(s => '#' + s.id === location.hash);
+  dashInit();
   view = fitView({ x: 0, y: 0, w: M.W, h: M.H });
   go(fromHash >= 0 ? fromHash : 0, true);
 })();
