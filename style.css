@@ -317,3 +317,22 @@ body{background:
   .dcard{padding:6px 10px 2px}
 }
 @media (prefers-reduced-motion:reduce){.chg,.map-chg.show{animation-duration:.01s}}
+
+/* ===== карточка страны ===== */
+.c{cursor:pointer}
+.edge.usa{cursor:pointer}
+.cc-tag{display:inline-flex;align-items:center;gap:8px;font:500 14px var(--head);text-transform:uppercase;letter-spacing:.08em;margin:-4px 0 4px}
+.cc-tag i{width:14px;height:14px;border:2px solid var(--ink);flex:none}
+.cc-facts{display:grid;grid-template-columns:minmax(110px,150px) 1fr;gap:0;margin:0;border-top:3px solid var(--ink)}
+.cc-facts dt{font:500 13px/1.35 var(--head);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px 8px 0;border-bottom:1px solid #14121033}
+.cc-facts dd{margin:0;font:15.5px/1.45 var(--serif);padding:7px 0;border-bottom:1px solid #14121033}
+.cc-nums{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.cc-nums li{background:var(--paper2);border-left:6px solid var(--red);padding:8px 10px;display:flex;flex-direction:column}
+.cc-nums b{font:400 24px/1.1 var(--mono)}
+.cc-nums span{font:13px/1.35 var(--sans);color:var(--muted)}
+.cc-lead{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px}
+.cc-ch .lk-plain{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;border-left:6px solid #14121055;background:var(--paper2);padding:9px 10px;font:15px/1.45 var(--serif)}
+.cc-ch .lk-plain .lk-y{background:#5b554b}
+.cc-ch button.cur{border-left-color:var(--red);box-shadow:inset 0 0 0 2px var(--red)}
+@media (max-width:420px){.cc-facts{grid-template-columns:1fr}.cc-facts dt{border-bottom:0;padding:8px 0 0}.cc-facts dd{padding:2px 0 8px}}
+.cc-lead{align-items:start}

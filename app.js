@@ -99,7 +99,7 @@
       path.addEventListener('click', () => {
         if (dragged) return;
         const cur = STEPS[idx], g = (cur.groups || {})[p.k];
-        showPop(window.countryName(p.k, yearOf(cur)), g && G[g].t ? G[g].t : '');
+        openCountry(p.k);
       });
       landPaths[p.k] = path;
     }
@@ -158,7 +158,9 @@
     // края карты
     const usesUsa = (st.flows || []).some(f => f.from === 'usa' || f.to === 'usa');
     if (usesUsa) {
-      const g = el('g', { class: 'edge usa' }, gEdge); const r = el('rect', {}, g); const t = el('text', {}, g); t.textContent = 'США';
+      const g = el('g', { class: 'edge usa', tabindex: 0, role: 'button' }, gEdge); const r = el('rect', {}, g); const t = el('text', {}, g); t.textContent = 'США';
+      g.addEventListener('click', () => { if (!dragged) openCountry('US'); });
+      g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCountry('US'); } });
       usaBadge = { e: { side: 'usa', y: 0.42 }, g, r, t };
     } else usaBadge = null;
     edgeData = (st.edges || []).map((e, j) => {
@@ -323,6 +325,31 @@
   function openLeader(id) {
     const p = L[id];
     openModal(`<div class="lead-card">${portrait(id)}<div><h2>${esc(p.name)}</h2><div style="color:var(--muted);font-size:14px">${esc(p.years)}<br>${esc(p.role)}</div></div></div><p>${esc(p.bio)}</p><p>${esc(p.note)}</p>`);
+  }
+
+  // ---------- карточка страны ----------
+  function openCountry(k) {
+    const st = STEPS[idx], y = yearOf(st), C = (window.COUNTRIES || {})[k], g = (st.groups || {})[k];
+    const name = (C && C.n) || window.countryName(k, y);
+    const tag = g && G[g].t ? `<div class="cc-tag"><i style="background:${G[g].c}"></i>${esc(G[g].t)}</div>` : '';
+    if (!C) { openModal(`<h2>${esc(name)}</h2>${tag}`); return; }
+    let pi = C.p.findIndex(p => p[0] <= y && y <= p[1]);
+    if (pi < 0) { pi = 0; C.p.forEach((p, i) => { if (p[0] <= y) pi = i; }); }
+    const inh = j => { for (let i = pi; i >= 0; i--) if (C.p[i][j] !== 0) return C.p[i][j]; return ''; };
+    const P = C.p[pi], rows = [['Государство', inh(2)], ['Глава государства', inh(3)], ['Правительство', inh(4)], ['Столица', P[6] || C.c]].filter(r => r[1]);
+    const per = P[0] === P[1] ? P[0] + ' г.' : P[0] + '–' + P[1] + ' гг.';
+    const nums = (window.STATS || []).map(c => { const q = c.series.find(q => q.k === k), v = q && q.v[y - c.from]; return v == null ? '' : `<li><b>${num(v)}</b><span>${esc(c.title)}, ${esc(c.unit)}</span></li>`; }).join('');
+    const lead = ((window.LEADER_OF || {})[k] || []).filter(id => L[id]);
+    const ch = (C.ch || []).map(c => { const id = c[2] || (c[0] === 1929 ? '1929' : (STEPS.find(x => yearOf(x) === c[0]) || {}).id), i = STEPS.findIndex(x => x.id === id); const body = `<span class="lk-y">${c[0]}</span><span>${esc(c[1])}</span>`; return i < 0 ? `<li><div class="lk-plain">${body}</div></li>` : `<li><button type="button" data-go="${i}"${i === idx ? ' class="cur"' : ''}>${body}</button></li>`; }).join('');
+    openModal(`<h2>${esc(name)}</h2>${tag}
+      <h3 class="sub">Справка на ${y} г.</h3><dl class="cc-facts">${rows.map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('')}</dl>
+      <h3 class="sub">Что происходит: ${per}</h3><p>${esc(P[5])}</p>
+      ${nums ? `<h3 class="sub">Цифры за ${y} г.</h3><ul class="cc-nums">${nums}</ul>` : ''}
+      ${lead.length ? `<h3 class="sub">Лидеры</h3><div class="cc-lead">${lead.map(leaderCard).join('')}</div>` : ''}
+      ${ch ? `<h3 class="sub">Хроника 1914–1939</h3><ul class="lk cc-ch">${ch}</ul>` : ''}`);
+    const mb = $('modalBody'); bindLeaders(mb);
+    mb.querySelectorAll('.cc-ch button').forEach(b => b.addEventListener('click', () => { closeModal(); go(+b.dataset.go); }));
+    $('modal').querySelector('.modal-box').scrollTop = 0;
   }
 
   // ---------- метки и всплывающие окна ----------
